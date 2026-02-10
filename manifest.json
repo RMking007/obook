@@ -1,7 +1,7 @@
 {
   "name": "My Personal Library",
   "short_name": "Rm Obook",
-  "start_url": "/obook",
+  "start_url": "/Obook",
   "display": "standalone",
   "background_color": "#ffffff",
   "theme_color": "#6200ee",
