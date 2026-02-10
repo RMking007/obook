@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Rm Obook</title>
+    <link rel="manifest" href="manifest.json">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/epub.js/0.3.88/epub.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/localforage/1.10.0/localforage.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+    <script src="https://apis.google.com/js/api.js" async defer></script>
+    <style>
+        :root { --bg: #f8fafc; --card: #ffffff; --text: #1e293b; }
+        body.dark-mode { --bg: #0f172a; --card: #1e293b; --text: #f1f5f9; background-color: var(--bg); color: var(--text); }
+        #viewer { height: 70vh; width: 100%; background: var(--card); border-radius: 12px; }
+        .hidden { display: none; }
+        .book-card:hover .delete-btn { opacity: 1; }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+    </style>
+</head>
+<body class="bg-[var(--bg)] font-sans transition-colors duration-200">
+
+    <div id="app" class="max-w-2xl mx-auto p-4 pb-24">
+        <header class="sticky top-0 bg-[var(--bg)] py-4 z-10">
+            <div class="flex justify-between items-center mb-4">
+                <h1 class="text-3xl font-extrabold text-indigo-600 tracking-tight">Rm Obook</h1>
+                <div class="flex gap-2">
+                    <button id="syncBtn" onclick="handleAuthClick()" class="p-2 rounded-xl bg-green-100 text-green-700 text-xs font-bold">☁️ Sync</button>
+                    <button id="themeToggle" class="p-2 rounded-xl bg-gray-200 dark:bg-gray-700">🌙</button>
+                    <button id="addBtn" class="bg-indigo-600 text-white px-4 py-2 rounded-xl font-bold shadow-lg">+</button>
+                </div>
+            </div>
+            <input type="text" id="searchBar" placeholder="Search your library..." class="w-full p-3 rounded-xl border border-gray-200 dark:bg-gray-800 dark:border-gray-700 outline-none focus:ring-2 focus:ring-indigo-500">
+        </header>
+
+        <div class="flex gap-2 overflow-x-auto pb-4 no-scrollbar">
+            <button onclick="filterBooks('all')" class="bg-indigo-600 text-white px-4 py-1 rounded-full text-sm whitespace-nowrap">My Books</button>
+            <button onclick="filterBooks('history')" class="bg-gray-200 dark:bg-gray-800 px-4 py-1 rounded-full text-sm whitespace-nowrap">History</button>
+            <button onclick="alert('Feature coming soon: Manual Folders')" class="text-indigo-500 px-4 py-1 text-sm font-bold">+ New List</button>
+        </div>
+
+        <div id="library" class="grid grid-cols-2 sm:grid-cols-3 gap-4"></div>
+
+        <div id="readerContainer" class="hidden fixed inset-0 bg-[var(--card)] z-50 p-4 flex flex-col">
+            <div class="flex justify-between items-center mb-4">
+                <button onclick="closeReader()" class="text-indigo-500 font-bold">← Library</button>
+                <div id="percent" class="text-xs font-mono opacity-60">0%</div>
+            </div>
+            <div id="viewer" class="shadow-2xl"></div>
+            <div class="flex justify-between p-6">
+                <button onclick="rendition.prev()" class="bg-indigo-50 dark:bg-gray-700 px-8 py-4 rounded-2xl font-bold active:scale-95 transition">Prev</button>
+                <button onclick="rendition.next()" class="bg-indigo-50 dark:bg-gray-700 px-8 py-4 rounded-2xl font-bold active:scale-95 transition">Next</button>
+            </div>
+        </div>
+
+        <input type="file" id="fileInput" accept=".epub" class="hidden">
+    </div>
+
+    <script>
+        // --- GOOGLE DRIVE CONFIG (Replace these!) ---
+        const CLIENT_ID = 'YOUR_CLIENT_ID.apps.googleusercontent.com';
+        const API_KEY = 'YOUR_API_KEY';
+        const SCOPES = 'https://www.googleapis.com/auth/drive.file';
+
+        let rendition, currentBookKey, tokenClient, allBooks = {};
+        const libraryEl = document.getElementById('library');
+        const searchBar = document.getElementById('searchBar');
+
+        // --- GOOGLE SYNC SETUP ---
+        function gapiLoaded() { gapi.load('client', () => gapi.client.init({ apiKey: API_KEY, discoveryDocs: ["https://www.googleapis.com/discovery/v1/apis/drive/v3/rest"] })); }
+        function initTokenClient() { tokenClient = google.accounts.oauth2.initTokenClient({ client_id: CLIENT_ID, scope: SCOPES, callback: (resp) => { if (resp.access_token) uploadSyncFile(); } }); }
+        
+        function handleAuthClick() {
+            if (gapi.client.getToken() === null) tokenClient.requestAccessToken({ prompt: 'consent' });
+            else uploadSyncFile();
+        }
+
+        async function uploadSyncFile() {
+            const data = {};
+            await localforage.iterate((v, k) => { data[k] = { name: v.name, progress: v.progress, lastRead: v.lastRead }; });
+            const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
+            const metadata = { name: 'rm_obook_sync.json', mimeType: 'application/json' };
+            
+            const form = new FormData();
+            form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
+            form.append('file', blob);
+
+            fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+                method: 'POST',
+                headers: new Headers({ 'Authorization': 'Bearer ' + gapi.client.getToken().access_token }),
+                body: form
+            }).then(() => alert("Rm Obook: Cloud Sync Successful!"));
+        }
+
+        // --- APP LOGIC ---
+        window.onload = loadLibrary;
+        document.getElementById('addBtn').onclick = () => document.getElementById('fileInput').click();
+
+        document.getElementById('fileInput').onchange = async (e) => {
+            const file = e.target.files[0];
+            const reader = new FileReader();
+            reader.onload = async (evt) => {
+                const bookId = 'book_' + Date.now();
+                await localforage.setItem(bookId, { 
+                    name: file.name, 
+                    data: evt.target.result, 
+                    progress: null, 
+                    lastRead: Date.now() 
+                });
+                loadLibrary();
+            };
+            reader.readAsArrayBuffer(file);
+        };
+
+        async function loadLibrary() {
+            allBooks = {};
+            await localforage.iterate((v, k) => { allBooks[k] = v; });
+            renderGrid(Object.keys(allBooks));
+        }
+
+        function renderGrid(keys) {
+            libraryEl.innerHTML = '';
+            keys.forEach(k => {
+                const b = allBooks[k];
+                const div = document.createElement('div');
+                div.className = "book-card relative bg-[var(--card)] p-3 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 transition transform active:scale-95";
+                div.innerHTML = `
+                    <div onclick="openReader('${k}')">
+                        <div class='h-32 bg-indigo-50 dark:bg-indigo-900/20 rounded-xl mb-2 flex items-center justify-center text-3xl'>📕</div>
+                        <p class='text-sm font-bold truncate'>${b.name}</p>
+                        <p class='text-[10px] opacity-40'>${b.lastRead ? 'Read ' + new Date(b.lastRead).toLocaleDateString() : ''}</p>
+                    </div>
+                    <button onclick="deleteBook('${k}')" class="delete-btn absolute top-1 right-1 bg-red-50 text-red-500 w-6 h-6 rounded-full text-xs transition opacity-0">✕</button>`;
+                libraryEl.appendChild(div);
+            });
+        }
+
+        searchBar.oninput = (e) => {
+            const term = e.target.value.toLowerCase();
+            const filtered = Object.keys(allBooks).filter(k => allBooks[k].name.toLowerCase().includes(term));
+            renderGrid(filtered);
+        };
+
+        function filterBooks(type) {
+            if (type === 'all') renderGrid(Object.keys(allBooks));
+            if (type === 'history') {
+                const sorted = Object.keys(allBooks).sort((a, b) => (allBooks[b].lastRead || 0) - (allBooks[a].lastRead || 0));
+                renderGrid(sorted);
+            }
+        }
+
+        async function deleteBook(k) { if(confirm('Remove this book from Rm Obook?')) { await localforage.removeItem(k); loadLibrary(); } }
+
+        async function openReader(k) {
+            currentBookKey = k;
+            const bRecord = allBooks[k];
+            document.getElementById('readerContainer').classList.remove('hidden');
+            const book = ePub(bRecord.data);
+            rendition = book.renderTo("viewer", { width: "100%", height: "100%", flow: "paginated" });
+            rendition.display(bRecord.progress);
+            
+            rendition.on("relocated", async (loc) => {
+                bRecord.progress = loc.start.cfi;
+                bRecord.lastRead = Date.now();
+                await localforage.setItem(k, bRecord);
+                const percent = book.locations.percentageFromCfi(loc.start.cfi);
+                document.getElementById('percent').innerText = Math.round(percent * 100) + "%";
+            });
+
+            if(document.body.classList.contains('dark-mode')) {
+                rendition.themes.register("dark", { body: { background: '#1e293b', color: '#f1f5f9' }});
+                rendition.themes.select("dark");
+            }
+        }
+
+        function closeReader() {
+            document.getElementById('readerContainer').classList.add('hidden');
+            if(rendition) rendition.destroy();
+            loadLibrary();
+        }
+
+        document.getElementById('themeToggle').onclick = () => document.body.classList.toggle('dark-mode');
+
+        if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js');
+    </script>
+</body>
+</html>
