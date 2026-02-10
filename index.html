@@ -3,186 +3,192 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Rm Obook</title>
-    <link rel="manifest" href="manifest.json">
+    <title>Rm Obook Pro</title>
+    <link rel="manifest" href="/obook/manifest.json">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/epub.js/0.3.88/epub.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/localforage/1.10.0/localforage.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://accounts.google.com/gsi/client" async defer></script>
-    <script src="https://apis.google.com/js/api.js" async defer></script>
     <style>
-        :root { --bg: #f8fafc; --card: #ffffff; --text: #1e293b; }
-        body.dark-mode { --bg: #0f172a; --card: #1e293b; --text: #f1f5f9; background-color: var(--bg); color: var(--text); }
-        #viewer { height: 70vh; width: 100%; background: var(--card); border-radius: 12px; }
+        :root { --bg: #f8fafc; --card: #ffffff; --indigo: #4f46e5; }
+        body.dark-mode { --bg: #0f172a; --card: #1e293b; color: #f1f5f9; }
+        
+        #viewer { height: 70vh; width: 100%; border-radius: 12px; }
         .hidden { display: none; }
-        .book-card:hover .delete-btn { opacity: 1; }
-        .no-scrollbar::-webkit-scrollbar { display: none; }
+        
+        /* Highlight Menu */
+        #highlightMenu { 
+            display: none; position: fixed; z-index: 100; 
+            background: var(--card); border-radius: 30px; padding: 8px 16px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.2); gap: 12px;
+            border: 1px solid rgba(0,0,0,0.1);
+        }
+        .hl-btn { width: 24px; height: 24px; border-radius: 50%; cursor: pointer; border: 2px solid transparent; }
+        .hl-btn:hover { border-color: gray; }
+        
+        /* Drawer for Bookmarks */
+        #drawer {
+            position: fixed; top: 0; right: -300px; width: 300px; height: 100%;
+            background: var(--card); z-index: 60; transition: 0.3s;
+            box-shadow: -5px 0 15px rgba(0,0,0,0.1); padding: 20px;
+        }
+        #drawer.open { right: 0; }
+        
+        mark.hl-yellow { background: #fef08a; color: black; }
+        mark.hl-green { background: #bbf7d0; color: black; }
+        mark.hl-pink { background: #fbcfe8; color: black; }
     </style>
 </head>
-<body class="bg-[var(--bg)] font-sans transition-colors duration-200">
+<body class="bg-[var(--bg)] font-sans">
 
-    <div id="app" class="max-w-2xl mx-auto p-4 pb-24">
-        <header class="sticky top-0 bg-[var(--bg)] py-4 z-10">
-            <div class="flex justify-between items-center mb-4">
-                <h1 class="text-3xl font-extrabold text-indigo-600 tracking-tight">Rm Obook</h1>
-                <div class="flex gap-2">
-                    <button id="syncBtn" onclick="handleAuthClick()" class="p-2 rounded-xl bg-green-100 text-green-700 text-xs font-bold">☁️ Sync</button>
-                    <button id="themeToggle" class="p-2 rounded-xl bg-gray-200 dark:bg-gray-700">🌙</button>
-                    <button id="addBtn" class="bg-indigo-600 text-white px-4 py-2 rounded-xl font-bold shadow-lg">+</button>
-                </div>
+    <div id="app" class="max-w-2xl mx-auto p-4">
+        <header class="flex justify-between items-center py-4">
+            <h1 class="text-3xl font-extrabold text-indigo-600">Rm Obook</h1>
+            <div class="flex gap-2">
+                <button id="themeToggle" class="p-2 rounded-xl bg-gray-200 dark:bg-gray-700">🌙</button>
+                <button id="addBtn" class="bg-indigo-600 text-white px-4 py-2 rounded-xl font-bold">+</button>
             </div>
-            <input type="text" id="searchBar" placeholder="Search your library..." class="w-full p-3 rounded-xl border border-gray-200 dark:bg-gray-800 dark:border-gray-700 outline-none focus:ring-2 focus:ring-indigo-500">
         </header>
 
-        <div class="flex gap-2 overflow-x-auto pb-4 no-scrollbar">
-            <button onclick="filterBooks('all')" class="bg-indigo-600 text-white px-4 py-1 rounded-full text-sm whitespace-nowrap">My Books</button>
-            <button onclick="filterBooks('history')" class="bg-gray-200 dark:bg-gray-800 px-4 py-1 rounded-full text-sm whitespace-nowrap">History</button>
-            <button onclick="alert('Feature coming soon: Manual Folders')" class="text-indigo-500 px-4 py-1 text-sm font-bold">+ New List</button>
-        </div>
+        <div id="library" class="grid grid-cols-2 sm:grid-cols-3 gap-4 mt-4"></div>
 
-        <div id="library" class="grid grid-cols-2 sm:grid-cols-3 gap-4"></div>
-
-        <div id="readerContainer" class="hidden fixed inset-0 bg-[var(--card)] z-50 p-4 flex flex-col">
+        <div id="readerContainer" class="hidden fixed inset-0 bg-[var(--bg)] z-50 p-4 flex flex-col">
             <div class="flex justify-between items-center mb-4">
-                <button onclick="closeReader()" class="text-indigo-500 font-bold">← Library</button>
-                <div id="percent" class="text-xs font-mono opacity-60">0%</div>
+                <button onclick="closeReader()" class="text-indigo-600 font-bold">← Library</button>
+                <div class="flex gap-3">
+                    <button onclick="addBookmark()" class="text-xl">🔖</button>
+                    <button onclick="toggleDrawer()" class="text-xl">📋</button>
+                    <button id="viewModeBtn" onclick="toggleView()" class="text-xs bg-gray-200 dark:bg-gray-800 px-3 py-1 rounded-lg">Swipe</button>
+                </div>
             </div>
-            <div id="viewer" class="shadow-2xl"></div>
-            <div class="flex justify-between p-6">
-                <button onclick="rendition.prev()" class="bg-indigo-50 dark:bg-gray-700 px-8 py-4 rounded-2xl font-bold active:scale-95 transition">Prev</button>
-                <button onclick="rendition.next()" class="bg-indigo-50 dark:bg-gray-700 px-8 py-4 rounded-2xl font-bold active:scale-95 transition">Next</button>
+            
+            <div id="viewer" class="shadow-xl bg-[var(--card)]"></div>
+
+            <div id="navControls" class="flex justify-between p-6 mt-auto">
+                <button id="prevBtn" class="bg-indigo-50 dark:bg-gray-800 px-8 py-4 rounded-2xl font-bold transition active:scale-90">Prev</button>
+                <button id="nextBtn" class="bg-indigo-50 dark:bg-gray-800 px-8 py-4 rounded-2xl font-bold transition active:scale-90">Next</button>
             </div>
         </div>
 
-        <input type="file" id="fileInput" accept=".epub" class="hidden">
+        <div id="drawer">
+            <div class="flex justify-between mb-6">
+                <h2 class="text-xl font-bold">Bookmarks</h2>
+                <button onclick="toggleDrawer()">✕</button>
+            </div>
+            <div id="bookmarkList" class="space-y-3"></div>
+        </div>
+
+        <div id="highlightMenu" class="items-center">
+            <div class="hl-btn bg-yellow-300" onclick="applyHighlight('hl-yellow')"></div>
+            <div class="hl-btn bg-green-300" onclick="applyHighlight('hl-green')"></div>
+            <div class="hl-btn bg-pink-300" onclick="applyHighlight('hl-pink')"></div>
+            <div class="h-4 w-[1px] bg-gray-300 mx-1"></div>
+            <button onclick="clearSelection()" class="text-xs font-bold text-gray-500">Done</button>
+        </div>
+
+        <input type="file" id="fileInput" accept=".epub,.pdf,.txt" class="hidden">
     </div>
 
     <script>
-        // --- GOOGLE DRIVE CONFIG (Replace these!) ---
-        const CLIENT_ID = 'YOUR_CLIENT_ID.apps.googleusercontent.com';
-        const API_KEY = 'YOUR_API_KEY';
-        const SCOPES = 'https://www.googleapis.com/auth/drive.file';
+        let rendition, currentBook, currentBookKey, viewMode = 'paginated';
+        const viewer = document.getElementById('viewer');
 
-        let rendition, currentBookKey, tokenClient, allBooks = {};
-        const libraryEl = document.getElementById('library');
-        const searchBar = document.getElementById('searchBar');
-
-        // --- GOOGLE SYNC SETUP ---
-        function gapiLoaded() { gapi.load('client', () => gapi.client.init({ apiKey: API_KEY, discoveryDocs: ["https://www.googleapis.com/discovery/v1/apis/drive/v3/rest"] })); }
-        function initTokenClient() { tokenClient = google.accounts.oauth2.initTokenClient({ client_id: CLIENT_ID, scope: SCOPES, callback: (resp) => { if (resp.access_token) uploadSyncFile(); } }); }
-        
-        function handleAuthClick() {
-            if (gapi.client.getToken() === null) tokenClient.requestAccessToken({ prompt: 'consent' });
-            else uploadSyncFile();
-        }
-
-        async function uploadSyncFile() {
-            const data = {};
-            await localforage.iterate((v, k) => { data[k] = { name: v.name, progress: v.progress, lastRead: v.lastRead }; });
-            const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
-            const metadata = { name: 'rm_obook_sync.json', mimeType: 'application/json' };
-            
-            const form = new FormData();
-            form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
-            form.append('file', blob);
-
-            fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
-                method: 'POST',
-                headers: new Headers({ 'Authorization': 'Bearer ' + gapi.client.getToken().access_token }),
-                body: form
-            }).then(() => alert("Rm Obook: Cloud Sync Successful!"));
-        }
-
-        // --- APP LOGIC ---
+        // --- Core Functions ---
         window.onload = loadLibrary;
         document.getElementById('addBtn').onclick = () => document.getElementById('fileInput').click();
 
-        document.getElementById('fileInput').onchange = async (e) => {
-            const file = e.target.files[0];
-            const reader = new FileReader();
-            reader.onload = async (evt) => {
-                const bookId = 'book_' + Date.now();
-                await localforage.setItem(bookId, { 
-                    name: file.name, 
-                    data: evt.target.result, 
-                    progress: null, 
-                    lastRead: Date.now() 
-                });
-                loadLibrary();
-            };
-            reader.readAsArrayBuffer(file);
-        };
-
         async function loadLibrary() {
-            allBooks = {};
-            await localforage.iterate((v, k) => { allBooks[k] = v; });
-            renderGrid(Object.keys(allBooks));
-        }
-
-        function renderGrid(keys) {
-            libraryEl.innerHTML = '';
-            keys.forEach(k => {
-                const b = allBooks[k];
+            const lib = document.getElementById('library'); lib.innerHTML = '';
+            await localforage.iterate((v, k) => {
                 const div = document.createElement('div');
-                div.className = "book-card relative bg-[var(--card)] p-3 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 transition transform active:scale-95";
-                div.innerHTML = `
-                    <div onclick="openReader('${k}')">
-                        <div class='h-32 bg-indigo-50 dark:bg-indigo-900/20 rounded-xl mb-2 flex items-center justify-center text-3xl'>📕</div>
-                        <p class='text-sm font-bold truncate'>${b.name}</p>
-                        <p class='text-[10px] opacity-40'>${b.lastRead ? 'Read ' + new Date(b.lastRead).toLocaleDateString() : ''}</p>
-                    </div>
-                    <button onclick="deleteBook('${k}')" class="delete-btn absolute top-1 right-1 bg-red-50 text-red-500 w-6 h-6 rounded-full text-xs transition opacity-0">✕</button>`;
-                libraryEl.appendChild(div);
+                div.className = "bg-[var(--card)] p-4 rounded-2xl shadow-sm cursor-pointer border dark:border-gray-700";
+                div.innerHTML = `<p class='font-bold truncate'>${v.name}</p><p class='text-[10px] opacity-50'>${v.type.toUpperCase()}</p>`;
+                div.onclick = () => openReader(k);
+                lib.appendChild(div);
             });
         }
-
-        searchBar.oninput = (e) => {
-            const term = e.target.value.toLowerCase();
-            const filtered = Object.keys(allBooks).filter(k => allBooks[k].name.toLowerCase().includes(term));
-            renderGrid(filtered);
-        };
-
-        function filterBooks(type) {
-            if (type === 'all') renderGrid(Object.keys(allBooks));
-            if (type === 'history') {
-                const sorted = Object.keys(allBooks).sort((a, b) => (allBooks[b].lastRead || 0) - (allBooks[a].lastRead || 0));
-                renderGrid(sorted);
-            }
-        }
-
-        async function deleteBook(k) { if(confirm('Remove this book from Rm Obook?')) { await localforage.removeItem(k); loadLibrary(); } }
 
         async function openReader(k) {
             currentBookKey = k;
-            const bRecord = allBooks[k];
+            const file = await localforage.getItem(k);
             document.getElementById('readerContainer').classList.remove('hidden');
-            const book = ePub(bRecord.data);
-            rendition = book.renderTo("viewer", { width: "100%", height: "100%", flow: "paginated" });
-            rendition.display(bRecord.progress);
             
-            rendition.on("relocated", async (loc) => {
-                bRecord.progress = loc.start.cfi;
-                bRecord.lastRead = Date.now();
-                await localforage.setItem(k, bRecord);
-                const percent = book.locations.percentageFromCfi(loc.start.cfi);
-                document.getElementById('percent').innerText = Math.round(percent * 100) + "%";
-            });
+            if (file.type === 'epub') {
+                currentBook = ePub(file.data);
+                rendition = currentBook.renderTo("viewer", { width: "100%", height: "100%", flow: viewMode });
+                rendition.display(file.progress);
+                
+                rendition.on("relocated", (loc) => {
+                    file.progress = loc.start.cfi;
+                    localforage.setItem(k, file);
+                });
 
-            if(document.body.classList.contains('dark-mode')) {
-                rendition.themes.register("dark", { body: { background: '#1e293b', color: '#f1f5f9' }});
-                rendition.themes.select("dark");
+                document.getElementById('nextBtn').onclick = () => rendition.next();
+                document.getElementById('prevBtn').onclick = () => rendition.prev();
             }
+            updateBookmarkList();
         }
 
-        function closeReader() {
-            document.getElementById('readerContainer').classList.add('hidden');
-            if(rendition) rendition.destroy();
-            loadLibrary();
+        // --- Bookmark Logic ---
+        async function addBookmark() {
+            const file = await localforage.getItem(currentBookKey);
+            const label = prompt("Bookmark Name:", "Important Page");
+            if (!label) return;
+
+            if (!file.bookmarks) file.bookmarks = [];
+            const loc = rendition ? rendition.currentLocation().start.cfi : null;
+            
+            file.bookmarks.push({ label, loc, date: new Date().toLocaleDateString() });
+            await localforage.setItem(currentBookKey, file);
+            updateBookmarkList();
         }
 
+        async function updateBookmarkList() {
+            const file = await localforage.getItem(currentBookKey);
+            const list = document.getElementById('bookmarkList');
+            list.innerHTML = '';
+            (file.bookmarks || []).forEach((bm, index) => {
+                const item = document.createElement('div');
+                item.className = "p-3 bg-indigo-50 dark:bg-gray-800 rounded-lg cursor-pointer hover:bg-indigo-100 transition";
+                item.innerHTML = `<p class='text-sm font-bold'>${bm.label}</p><p class='text-[10px] opacity-50'>${bm.date}</p>`;
+                item.onclick = () => { rendition.display(bm.loc); toggleDrawer(); };
+                list.appendChild(item);
+            });
+        }
+
+        // --- Highlight UI Logic ---
+        document.addEventListener('mouseup', (e) => {
+            const selection = window.getSelection();
+            if (selection.toString().length > 2) {
+                const menu = document.getElementById('highlightMenu');
+                menu.style.display = 'flex';
+                menu.style.top = `${e.clientY - 60}px`;
+                menu.style.left = `${e.clientX - 50}px`;
+            } else {
+                document.getElementById('highlightMenu').style.display = 'none';
+            }
+        });
+
+        function applyHighlight(color) {
+            const selection = window.getSelection();
+            if (selection.rangeCount > 0) {
+                const range = selection.getRangeAt(0);
+                const mark = document.createElement('mark');
+                mark.className = color;
+                range.surroundContents(mark);
+            }
+            clearSelection();
+        }
+
+        function clearSelection() { window.getSelection().removeAllRanges(); document.getElementById('highlightMenu').style.display = 'none'; }
+        function toggleDrawer() { document.getElementById('drawer').classList.toggle('open'); }
+        function toggleView() { 
+            viewMode = (viewMode === 'paginated') ? 'scrolled' : 'paginated';
+            document.getElementById('viewModeBtn').innerText = viewMode === 'paginated' ? 'Swipe' : 'Scroll';
+            location.reload(); // Reloading is the safest way to reset the ePub engine flow
+        }
+        function closeReader() { document.getElementById('readerContainer').classList.add('hidden'); location.reload(); }
         document.getElementById('themeToggle').onclick = () => document.body.classList.toggle('dark-mode');
-
-        if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js');
     </script>
 </body>
 </html>
