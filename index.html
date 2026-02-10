@@ -10,30 +10,14 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/localforage/1.10.0/localforage.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        :root { --bg: #f8fafc; --card: #ffffff; --indigo: #4f46e5; }
+        :root { --bg: #f8fafc; --card: #ffffff; }
         body.dark-mode { --bg: #0f172a; --card: #1e293b; color: #f1f5f9; }
-        
-        #viewer { height: 70vh; width: 100%; border-radius: 12px; }
+        #viewer { height: 70vh; width: 100%; border-radius: 12px; overflow: hidden; position: relative; }
         .hidden { display: none; }
-        
-        /* Highlight Menu */
-        #highlightMenu { 
-            display: none; position: fixed; z-index: 100; 
-            background: var(--card); border-radius: 30px; padding: 8px 16px;
-            box-shadow: 0 10px 25px rgba(0,0,0,0.2); gap: 12px;
-            border: 1px solid rgba(0,0,0,0.1);
-        }
-        .hl-btn { width: 24px; height: 24px; border-radius: 50%; cursor: pointer; border: 2px solid transparent; }
-        .hl-btn:hover { border-color: gray; }
-        
-        /* Drawer for Bookmarks */
-        #drawer {
-            position: fixed; top: 0; right: -300px; width: 300px; height: 100%;
-            background: var(--card); z-index: 60; transition: 0.3s;
-            box-shadow: -5px 0 15px rgba(0,0,0,0.1); padding: 20px;
-        }
+        #drawer { position: fixed; top: 0; right: -320px; width: 300px; height: 100%; background: var(--card); z-index: 100; transition: 0.3s; box-shadow: -5px 0 15px rgba(0,0,0,0.1); padding: 20px; }
         #drawer.open { right: 0; }
-        
+        #highlightMenu { display: none; position: fixed; z-index: 1000; background: var(--card); border-radius: 30px; padding: 8px 16px; box-shadow: 0 10px 25px rgba(0,0,0,0.2); gap: 12px; border: 1px solid rgba(0,0,0,0.1); }
+        .hl-btn { width: 24px; height: 24px; border-radius: 50%; cursor: pointer; }
         mark.hl-yellow { background: #fef08a; color: black; }
         mark.hl-green { background: #bbf7d0; color: black; }
         mark.hl-pink { background: #fbcfe8; color: black; }
@@ -45,35 +29,44 @@
         <header class="flex justify-between items-center py-4">
             <h1 class="text-3xl font-extrabold text-indigo-600">Rm Obook</h1>
             <div class="flex gap-2">
-                <button id="themeToggle" class="p-2 rounded-xl bg-gray-200 dark:bg-gray-700">🌙</button>
+                <button onclick="showStats()" class="p-2 bg-indigo-50 dark:bg-gray-800 rounded-xl">📊</button>
+                <button id="themeToggle" class="p-2 bg-gray-200 dark:bg-gray-700 rounded-xl">🌙</button>
                 <button id="addBtn" class="bg-indigo-600 text-white px-4 py-2 rounded-xl font-bold">+</button>
             </div>
         </header>
 
-        <div id="library" class="grid grid-cols-2 sm:grid-cols-3 gap-4 mt-4"></div>
+        <input type="text" id="searchBar" placeholder="Search library..." class="w-full p-3 mb-6 rounded-xl border dark:bg-gray-800 dark:border-gray-700 outline-none">
+
+        <div id="library" class="grid grid-cols-2 sm:grid-cols-3 gap-4"></div>
 
         <div id="readerContainer" class="hidden fixed inset-0 bg-[var(--bg)] z-50 p-4 flex flex-col">
             <div class="flex justify-between items-center mb-4">
-                <button onclick="closeReader()" class="text-indigo-600 font-bold">← Library</button>
-                <div class="flex gap-3">
-                    <button onclick="addBookmark()" class="text-xl">🔖</button>
-                    <button onclick="toggleDrawer()" class="text-xl">📋</button>
-                    <button id="viewModeBtn" onclick="toggleView()" class="text-xs bg-gray-200 dark:bg-gray-800 px-3 py-1 rounded-lg">Swipe</button>
+                <button onclick="closeReader()" class="text-indigo-600 font-bold">← Back</button>
+                <div class="flex gap-4">
+                    <button onclick="addBookmark()">🔖</button>
+                    <button onclick="toggleDrawer()">📋</button>
                 </div>
             </div>
-            
-            <div id="viewer" class="shadow-xl bg-[var(--card)]"></div>
-
+            <div id="viewer" class="bg-[var(--card)] shadow-xl"></div>
             <div id="navControls" class="flex justify-between p-6 mt-auto">
-                <button id="prevBtn" class="bg-indigo-50 dark:bg-gray-800 px-8 py-4 rounded-2xl font-bold transition active:scale-90">Prev</button>
-                <button id="nextBtn" class="bg-indigo-50 dark:bg-gray-800 px-8 py-4 rounded-2xl font-bold transition active:scale-90">Next</button>
+                <button id="prevBtn" class="bg-gray-200 dark:bg-gray-800 px-6 py-3 rounded-xl">Prev</button>
+                <span id="pageInfo" class="text-xs self-center"></span>
+                <button id="nextBtn" class="bg-gray-200 dark:bg-gray-800 px-6 py-3 rounded-xl">Next</button>
+            </div>
+        </div>
+
+        <div id="statsOverlay" class="hidden fixed inset-0 bg-black/50 backdrop-blur-sm z-[110] flex items-center justify-center p-6">
+            <div class="bg-[var(--card)] w-full max-w-sm rounded-3xl p-8 shadow-2xl">
+                <h2 class="text-2xl font-bold mb-4">Reading Stats</h2>
+                <div id="statsContent" class="space-y-4"></div>
+                <button onclick="document.getElementById('statsOverlay').classList.add('hidden')" class="mt-6 w-full bg-indigo-600 text-white py-3 rounded-xl">Close</button>
             </div>
         </div>
 
         <div id="drawer">
-            <div class="flex justify-between mb-6">
+            <div class="flex justify-between items-center mb-6">
                 <h2 class="text-xl font-bold">Bookmarks</h2>
-                <button onclick="toggleDrawer()">✕</button>
+                <button onclick="toggleDrawer()" class="text-2xl">✕</button>
             </div>
             <div id="bookmarkList" class="space-y-3"></div>
         </div>
@@ -82,112 +75,138 @@
             <div class="hl-btn bg-yellow-300" onclick="applyHighlight('hl-yellow')"></div>
             <div class="hl-btn bg-green-300" onclick="applyHighlight('hl-green')"></div>
             <div class="hl-btn bg-pink-300" onclick="applyHighlight('hl-pink')"></div>
-            <div class="h-4 w-[1px] bg-gray-300 mx-1"></div>
-            <button onclick="clearSelection()" class="text-xs font-bold text-gray-500">Done</button>
+            <button onclick="clearSelection()" class="text-xs font-bold text-gray-400 ml-2">✕</button>
         </div>
 
         <input type="file" id="fileInput" accept=".epub,.pdf,.txt" class="hidden">
     </div>
 
     <script>
-        let rendition, currentBook, currentBookKey, viewMode = 'paginated';
+        let rendition, currentBook, currentBookKey, allBooks = {};
         const viewer = document.getElementById('viewer');
 
-        // --- Core Functions ---
-        window.onload = loadLibrary;
+        // --- 1. FIXED FILE UPLOAD (.TXT FIX) ---
         document.getElementById('addBtn').onclick = () => document.getElementById('fileInput').click();
+        document.getElementById('fileInput').onchange = async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            const type = file.name.split('.').pop().toLowerCase();
+            const reader = new FileReader();
 
+            reader.onload = async (evt) => {
+                const id = 'file_' + Date.now();
+                await localforage.setItem(id, {
+                    name: file.name,
+                    data: evt.target.result,
+                    type: type,
+                    progress: null,
+                    bookmarks: [],
+                    addedDate: Date.now(),
+                    lastRead: null
+                });
+                loadLibrary();
+            };
+
+            if (type === 'txt') reader.readAsText(file);
+            else reader.readAsArrayBuffer(file);
+        };
+
+        // --- 2. LIBRARY ENGINE ---
         async function loadLibrary() {
             const lib = document.getElementById('library'); lib.innerHTML = '';
             await localforage.iterate((v, k) => {
                 const div = document.createElement('div');
-                div.className = "bg-[var(--card)] p-4 rounded-2xl shadow-sm cursor-pointer border dark:border-gray-700";
-                div.innerHTML = `<p class='font-bold truncate'>${v.name}</p><p class='text-[10px] opacity-50'>${v.type.toUpperCase()}</p>`;
+                div.className = "bg-[var(--card)] p-4 rounded-2xl shadow-sm border dark:border-gray-700 cursor-pointer";
+                div.innerHTML = `<div class='text-2xl mb-2'>${v.type==='pdf'?'📄':v.type==='txt'?'📝':'📕'}</div>
+                                 <p class='font-bold truncate text-sm'>${v.name}</p>`;
                 div.onclick = () => openReader(k);
                 lib.appendChild(div);
             });
         }
 
+        // --- 3. MULTI-FORMAT READER ---
         async function openReader(k) {
             currentBookKey = k;
             const file = await localforage.getItem(k);
+            file.lastRead = Date.now();
+            await localforage.setItem(k, file);
+
             document.getElementById('readerContainer').classList.remove('hidden');
-            
+            viewer.innerHTML = ''; viewer.style.overflowY = "hidden";
+
             if (file.type === 'epub') {
                 currentBook = ePub(file.data);
-                rendition = currentBook.renderTo("viewer", { width: "100%", height: "100%", flow: viewMode });
+                rendition = currentBook.renderTo("viewer", { width: "100%", height: "100%", flow: "paginated" });
                 rendition.display(file.progress);
-                
-                rendition.on("relocated", (loc) => {
-                    file.progress = loc.start.cfi;
+                rendition.on("relocated", (loc) => { 
+                    file.progress = loc.start.cfi; 
                     localforage.setItem(k, file);
+                    document.getElementById('pageInfo').innerText = `Progress: ${Math.round(currentBook.locations.percentageFromCfi(loc.start.cfi)*100)}%`;
                 });
-
                 document.getElementById('nextBtn').onclick = () => rendition.next();
                 document.getElementById('prevBtn').onclick = () => rendition.prev();
+            } else if (file.type === 'txt') {
+                viewer.style.overflowY = "auto";
+                viewer.innerHTML = `<div class="p-6 font-serif text-lg leading-relaxed whitespace-pre-wrap">${file.data}</div>`;
+                document.getElementById('navControls').classList.add('hidden');
             }
-            updateBookmarkList();
         }
 
-        // --- Bookmark Logic ---
+        // --- 4. READING STATS ---
+        async function showStats() {
+            let total = 0, finished = 0, recent = 0;
+            await localforage.iterate((v) => {
+                total++;
+                if (v.progress && v.progress.includes('100')) finished++;
+                if (v.lastRead && (Date.now() - v.lastRead < 86400000)) recent++;
+            });
+            document.getElementById('statsContent').innerHTML = `
+                <div class="flex justify-between"><span>Total Books:</span><b>${total}</b></div>
+                <div class="flex justify-between"><span>Finished:</span><b>${finished}</b></div>
+                <div class="flex justify-between"><span>Read Today:</span><b>${recent}</b></div>
+            `;
+            document.getElementById('statsOverlay').classList.remove('hidden');
+        }
+
+        // --- 5. UTILS (Bookmarks, Highlights, Theme) ---
+        function toggleDrawer() { document.getElementById('drawer').classList.toggle('open'); updateBookmarkList(); }
         async function addBookmark() {
             const file = await localforage.getItem(currentBookKey);
-            const label = prompt("Bookmark Name:", "Important Page");
-            if (!label) return;
-
-            if (!file.bookmarks) file.bookmarks = [];
-            const loc = rendition ? rendition.currentLocation().start.cfi : null;
-            
-            file.bookmarks.push({ label, loc, date: new Date().toLocaleDateString() });
-            await localforage.setItem(currentBookKey, file);
-            updateBookmarkList();
+            const name = prompt("Bookmark Name:");
+            if (name) {
+                file.bookmarks.push({ name, loc: rendition.currentLocation().start.cfi });
+                await localforage.setItem(currentBookKey, file);
+            }
         }
-
         async function updateBookmarkList() {
             const file = await localforage.getItem(currentBookKey);
-            const list = document.getElementById('bookmarkList');
-            list.innerHTML = '';
-            (file.bookmarks || []).forEach((bm, index) => {
-                const item = document.createElement('div');
-                item.className = "p-3 bg-indigo-50 dark:bg-gray-800 rounded-lg cursor-pointer hover:bg-indigo-100 transition";
-                item.innerHTML = `<p class='text-sm font-bold'>${bm.label}</p><p class='text-[10px] opacity-50'>${bm.date}</p>`;
-                item.onclick = () => { rendition.display(bm.loc); toggleDrawer(); };
-                list.appendChild(item);
+            const list = document.getElementById('bookmarkList'); list.innerHTML = '';
+            (file.bookmarks || []).forEach(b => {
+                const d = document.createElement('div');
+                d.className = "p-3 bg-indigo-50 dark:bg-gray-800 rounded-xl cursor-pointer";
+                d.innerText = b.name;
+                d.onclick = () => { rendition.display(b.loc); toggleDrawer(); };
+                list.appendChild(d);
             });
         }
-
-        // --- Highlight UI Logic ---
+        function applyHighlight(c) {
+            const s = window.getSelection();
+            if (s.rangeCount) {
+                const r = s.getRangeAt(0);
+                const m = document.createElement('mark');
+                m.className = c; r.surroundContents(m);
+            }
+            document.getElementById('highlightMenu').style.display = 'none';
+        }
         document.addEventListener('mouseup', (e) => {
-            const selection = window.getSelection();
-            if (selection.toString().length > 2) {
-                const menu = document.getElementById('highlightMenu');
-                menu.style.display = 'flex';
-                menu.style.top = `${e.clientY - 60}px`;
-                menu.style.left = `${e.clientX - 50}px`;
-            } else {
-                document.getElementById('highlightMenu').style.display = 'none';
-            }
+            const s = window.getSelection();
+            if (s.toString().length > 2) {
+                const m = document.getElementById('highlightMenu');
+                m.style.display = 'flex'; m.style.top = `${e.clientY - 60}px`; m.style.left = `${e.clientX - 50}px`;
+            } else document.getElementById('highlightMenu').style.display = 'none';
         });
-
-        function applyHighlight(color) {
-            const selection = window.getSelection();
-            if (selection.rangeCount > 0) {
-                const range = selection.getRangeAt(0);
-                const mark = document.createElement('mark');
-                mark.className = color;
-                range.surroundContents(mark);
-            }
-            clearSelection();
-        }
-
-        function clearSelection() { window.getSelection().removeAllRanges(); document.getElementById('highlightMenu').style.display = 'none'; }
-        function toggleDrawer() { document.getElementById('drawer').classList.toggle('open'); }
-        function toggleView() { 
-            viewMode = (viewMode === 'paginated') ? 'scrolled' : 'paginated';
-            document.getElementById('viewModeBtn').innerText = viewMode === 'paginated' ? 'Swipe' : 'Scroll';
-            location.reload(); // Reloading is the safest way to reset the ePub engine flow
-        }
-        function closeReader() { document.getElementById('readerContainer').classList.add('hidden'); location.reload(); }
+        function clearSelection() { window.getSelection().removeAllRanges(); }
+        function closeReader() { location.reload(); }
         document.getElementById('themeToggle').onclick = () => document.body.classList.toggle('dark-mode');
     </script>
 </body>
